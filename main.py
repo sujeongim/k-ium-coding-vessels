@@ -16,61 +16,21 @@ import numpy as np
 from collections import defaultdict
 from tqdm import tqdm
 from PIL import Image
+from model import build_model
 
-CSV_PATH = "./test_set" ####YOUR .CSV DIR HERE####
-CSV_FILENAME = "test.csv" ####YOUR .CSV DIR HERE####
-IMG_PATH = './test' ####YOUR TEST IMAGE FILES DIR HERE####
-IMG_FILE_EXTENSION = "*.jpg" ####YOUR TEST IMAGE FILE EXTENSION HERE####
-
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s', datefmt='%m/%d/%Y %H:%M:%S',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-batch_size = 2 # increase/decrease the value according to your RAM storage
-
-def build_model(input_shape: tuple, num_labels: int=22) -> Model:
-    """
-    Build model instance for training or loading saved weights.
-    Uses ResNet50, Attention mechanism, and LSTM; it takes 8 images in a sequence 
-    and attention mechanism is applied to each image. Then it flattens them out
-    and pass them to LSTM layer.
-    
-    # Parameters
-    - `input_shape`: (pixel, pixel, rgb/grayscale channel)
-    - `num_labels`: number of output labels; for aneurysm diagnosis task, it is fixed to 22
-    
-    """
-
-    # Create the ResNet50 model
-    resnet = ResNet50(include_top=False, weights='imagenet', input_tensor=None, input_shape=input_shape, pooling=None, classes=2)
-
-    # Define the attention model
-    input_layer = Input(shape=input_shape)
-    resnet_output = resnet(input_layer)
-    attention_output = Conv2D(256, (1, 1), activation='relu')(resnet_output)
-    attention_output = SpatialAttentionLayer()(attention_output)
-
-    attention_model = Model(inputs=input_layer, outputs=attention_output)
-
-    # Create the final model
-    input_sequence = Input(shape=(8,) + input_shape)
-    time_distributed_attention = TimeDistributed(attention_model)(input_sequence)
-    time_distributed_maxpool = TimeDistributed(MaxPooling2D())(time_distributed_attention)
-    time_distributed_flatten = TimeDistributed(Flatten())(time_distributed_maxpool)
-    lstm_output = LSTM(64)(time_distributed_flatten)
-    dense_output = Dense(128, activation='relu')(lstm_output)
-    final_output = Dense(num_labels, activation='sigmoid')(dense_output)
-
-    model = Model(inputs=input_sequence, outputs=final_output)
-
-    optimizer = Adam(learning_rate=1e-5)
-
-    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy', 'binary_accuracy'])
-    
-    return model
-    
-    
+  
 if __name__=='__main__':
+    CSV_PATH = "./test_set" ####YOUR .CSV DIR HERE####
+    CSV_FILENAME = "test.csv" ####YOUR .CSV DIR HERE####
+    IMG_PATH = './test' ####YOUR TEST IMAGE FILES DIR HERE####
+    IMG_FILE_EXTENSION = "*.jpg" ####YOUR TEST IMAGE FILE EXTENSION HERE####
+
+    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s', datefmt='%m/%d/%Y %H:%M:%S',
+                        level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
+    batch_size = 2 # increase/decrease the value according to your RAM storage
+    
     ### Building Models ###
     logger.info("Building a model instance...")
     model = build_model(input_shape=(720, 720, 3), num_labels=22)
@@ -106,7 +66,8 @@ if __name__=='__main__':
 
             if image.size != smallest_size:
                 image = image.resize(smallest_size)
-
+            image = preprocess(image)
+            
             temp.append(np.array(image))
         images.append(np.array(temp))   
     test_img = np.array(images)
@@ -115,7 +76,7 @@ if __name__=='__main__':
     
     ### Model prediction and Save output.csv ###
     logger.info("Yielding model prediction...")
-    pred = model.predict(test_img[:50], batch_size=batch_size)
+    pred = model.predict(test_img, batch_size=batch_size)
     
     cols = test.drop(['Index'], axis=1).columns
     # Set a threshold for converting probabilities to binary predictions
@@ -137,6 +98,9 @@ if __name__=='__main__':
 
     # Convert combined_predictions to a DataFrame
     combined_predictions_df = pd.DataFrame(combined_predictions, columns=cols)
+    # assuming every column except the one we’re about to add is a 0/1 prediction
+    combined_predictions_df['Aneurysm'] = combined_predictions_df.any(axis=1).astype(int)
+    
     combined_predictions_df['Index'] = test['Index'].copy()
     
     logger.info("Saving output.csv...")
