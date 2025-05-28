@@ -12,6 +12,28 @@ from tqdm import tqdm
 from model import MultiModalAneurysmClassifier  # 위에서 만든 모델 클래스
 from dataset import AneurysmDataset             # 위에서 만든 Dataset 클래스
 
+
+
+def custom_collate_fn(batch):
+    """
+    batch: list of length B, each item is (images, texts, label)
+    images: Tensor [8, 3, H, W]
+    texts: List[str] (length 8)
+    label: Tensor [22]
+    """
+    images, texts, labels = zip(*batch)
+    
+    # [B, 8, 3, H, W]
+    images = torch.stack(images)
+
+    # texts: List of B samples, each is List[str]
+    texts = list(texts)  # stays as List[List[str]]
+
+    # [B, 22]
+    labels = torch.stack(labels)
+
+    return images, texts, labels
+
 # -------------------- Settings -------------------- #
 # csv_path = "/home/edlab/sjim/k-ium-coding-vessels/train_set/train.csv"
 # image_dir = "/home/edlab/sjim/k-ium-coding-vessels/train_set/images"
@@ -49,8 +71,8 @@ train_size = int(0.8 * len(full_dataset))
 val_size = len(full_dataset) - train_size
 train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
 
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=4, collate_fn=custom_collate_fn)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=4, collate_fn=custom_collate_fn)
 
 # -------------------- Init Model -------------------- #
 model = MultiModalAneurysmClassifier(TEXT_MODEL_NAME, IMAGE_MODEL_NAME).to(DEVICE)

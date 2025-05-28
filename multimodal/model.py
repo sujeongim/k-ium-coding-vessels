@@ -35,17 +35,17 @@ class MultiModalAneurysmClassifier(nn.Module):
     def forward(self, images, texts):
         """
         images: [B, 8, 3, H, W]
-        texts: List of length B, each is a list of 8 strings
+        texts: List[List[str]] — length B, each element is 8 texts
         """
         B = images.size(0)
         all_fused = []
 
         for i in range(8):
+            # 각 i번째 이미지와 텍스트
             img = images[:, i, :, :, :]  # [B, 3, H, W]
             img_feat = self.image_encoder(img).squeeze(-1).squeeze(-1)  # [B, image_feature_dim]
 
-            # Gather i-th description across all samples
-            ith_texts = [sample[i] for sample in texts]  # List of B strings
+            ith_texts = [sample[i] for sample in texts]  # B개의 i번째 텍스트 추출
             tokens = self.tokenizer(ith_texts, return_tensors="pt", padding=True, truncation=True).to(images.device)
             txt_feat = self.text_encoder(**tokens).last_hidden_state[:, 0, :]  # [B, text_feature_dim]
 
@@ -56,3 +56,4 @@ class MultiModalAneurysmClassifier(nn.Module):
         combined = torch.cat(all_fused, dim=1)  # [B, hidden_dim * 8]
         out = self.classifier(combined)  # [B, 22]
         return out
+
