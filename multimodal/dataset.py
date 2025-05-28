@@ -4,6 +4,9 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
+# get from parent directory
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from imagefx import crop, preprocess  # ← 여기 추가
 
 class AneurysmDataset(Dataset):
@@ -38,7 +41,9 @@ class AneurysmDataset(Dataset):
             image = Image.open(image_path).convert("RGB")
 
             # 이미지 전처리: crop → invert/sharpen/contrast → transform
+        
             image = crop(image)
+         
             image = preprocess(image)
             
             if self.transform:
