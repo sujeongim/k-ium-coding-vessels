@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "env": {
                 "CUDA_VISIBLE_DEVICES": "4,5,6,7",
-                "PYTHONPATH": "${workspaceFolder}/k-ium-coding-vessels/multimodal:${workspaceFolder}/k-ium-coding-vessels/",
+                "PYTHONPATH": "/home/ceshim/k-ium-coding-vessels/multimodal:/home/ceshim/k-ium-coding-vessels/",
             },
             // "args": "${command:pickArgs}"
         }
