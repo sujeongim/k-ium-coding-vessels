@@ -8,14 +8,16 @@
 # Hwangbo, Lee, MD. June 2023.
 #
 import pandas
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, f1_score, recall_score
 
 
 def my_read_csv(filename):
     data = pandas.read_csv(filename)
     aneurysm = data.Aneurysm
+    tot = data.drop(columns=['Index'])
     location = data.drop(columns=['Index', 'Aneurysm'])
-    return aneurysm, location
+    tot['Aneurysm'] = (tot['Aneurysm'] > 0.5).astype(int)
+    return aneurysm, location, tot
 
 
 def calc_accuracy(gt_location, output_location):
@@ -29,20 +31,32 @@ def calc_accuracy(gt_location, output_location):
 
 
 def eval_model():
-    gt_aneurysm, gt_location = my_read_csv('groundtruth.csv')
-    output_aneurysm, output_location = my_read_csv('output.csv')
+    gt_aneurysm, gt_location, gt_total = my_read_csv('/home/edlab/sjim/k-ium-coding-vessels/test_set/groundtruth.csv')
+    output_aneurysm, output_location, output_total = my_read_csv('./results/output2.csv')
     auc_val = roc_auc_score(gt_aneurysm, output_aneurysm)
     acc_val = calc_accuracy(gt_location, output_location)
-    return auc_val, acc_val
+    
+    macro_f1 = f1_score(gt_total, output_total, average='macro', zero_division=0)
+    micro_f1 = f1_score(gt_total, output_total, average='micro', zero_division=0)
+    macro_recall = recall_score(gt_total, output_total, average='macro', zero_division=0)
+
+    
+    return auc_val, acc_val, macro_f1, micro_f1, macro_recall
     # You may use evalute() if you need to evaluate your model
 
 
 def main():
-    auc, acc = eval_model()
+    auc, acc, macro_f1, micro_f1, recall = eval_model()
     print('AUROC of the provided model')
     print (auc)
     print('Accuracy for locations')
     print (acc)
+    print('Macro F1 Score')
+    print(macro_f1)
+    print('Micro F1 Score')
+    print(micro_f1)
+    print('Recall Score')
+    print(recall)
 
 
 if __name__ == '__main__':
