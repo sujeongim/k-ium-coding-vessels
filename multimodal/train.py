@@ -100,6 +100,7 @@ def evaluate():
 # -------------------- Training Loop -------------------- #
 model.train()
 global_step = 0
+best_val_loss = float('inf')
 for epoch in range(EPOCHS):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
     for images, texts, labels in pbar:
@@ -123,9 +124,15 @@ for epoch in range(EPOCHS):
                 "val/accuracy": val_acc,
                 "step": global_step
             })
+            
+            # Save the model if it has the best validation loss so far
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), "best_aneurysm_model.pth")
+                print(f"New best model saved with val_loss: {val_loss:.4f}")
 
         global_step += 1
 
-# Save model
-torch.save(model.state_dict(), "aneurysm_model.pth")
-wandb.save("aneurysm_model.pth")
+# Log the best validation loss
+wandb.log({"best_val_loss": best_val_loss})
+wandb.save("best_aneurysm_model.pth")
