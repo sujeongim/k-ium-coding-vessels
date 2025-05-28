@@ -25,12 +25,19 @@ class MultiModalAneurysmClassifier(nn.Module):
         )
         
         # Final classifier (22 binary outputs)
+        # self.classifier = nn.Sequential(
+        #     nn.Linear(hidden_dim * 8, hidden_dim),
+        #     nn.ReLU(),
+        #     nn.Linear(hidden_dim, 22),
+        #     nn.Sigmoid()
+        # )
+
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim * 8, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 22),
-            nn.Sigmoid()
+            nn.Linear(hidden_dim, 22)
         )
+
 
     def forward(self, images, texts):
         """

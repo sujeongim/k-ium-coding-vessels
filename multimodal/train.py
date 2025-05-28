@@ -9,12 +9,21 @@ import torch.optim as optim
 from transformers import AutoTokenizer
 from torchvision import transforms
 from tqdm import tqdm
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, recall_score, classification_report
 import numpy as np
 from model import MultiModalAneurysmClassifier  # 위에서 만든 모델 클래스
 from dataset import AneurysmDataset             # 위에서 만든 Dataset 클래스
 import argparse
+import pandas as pd
 
+
+def compute_pos_weights(csv_path):
+    df = pd.read_csv(csv_path)
+    label_counts = df.iloc[:, 1:].sum(axis=0)  # 'Index' 제외
+    total_samples = len(df)
+    
+    pos_weights = (total_samples - label_counts) / (label_counts + 1e-6)  # 방어적 +epsilon
+    return torch.tensor(pos_weights.values, dtype=torch.float)
 
 def custom_collate_fn(batch):
     """
@@ -36,61 +45,83 @@ def custom_collate_fn(batch):
 
     return images, texts, labels
 
-# -------------------- Settings -------------------- #
-# # csv_path = "/home/edlab/sjim/k-ium-coding-vessels/train_set/train.csv"
-# # image_dir = "/home/edlab/sjim/k-ium-coding-vessels/train_set/images"
-# CSV_PATH = "/home/edlab/sjim/k-ium-coding-vessels/train_set/train.csv"
-# IMAGE_DIR = "/home/edlab/sjim/k-ium-coding-vessels/train_set/images"
-# args.text_model_name = "bert-base-uncased"
-# args.image_model_name = "resnet18"
-# args.epochs = 3
-# args.batch_size = 128
-# args.lr = 1e-4
-# args.val_interval = 1  # validate every n steps
-# args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# wandb.init(project="aneurysm-multimodal", config={
-#     "epochs": args.epochs,
-#     "batch_size": args.batch_size,
-#     "lr": args.lr,
-#     "image_model": args.image_model_name,
-#     "text_model": args.text_model_name
-# })
-
-
-
-# -------------------- Validation Loop -------------------- #
 @torch.no_grad()
 def evaluate(device, model, val_loader, criterion):
     model.eval()
-    total_loss, total_correct = 0, 0
-    total = 0
-    all_preds = []
-    all_labels = []
+    total_loss, total_correct, total = 0, 0, 0
+    all_preds, all_labels = [], []
+
     for images, texts, labels in val_loader:
         images, labels = images.to(device), labels.to(device)
         outputs = model(images, texts)
+
+        # Loss는 raw logits에 대해 계산
         loss = criterion(outputs, labels)
         total_loss += loss.item()
-        preds = (outputs > 0.5).float()
+
+        # 확률로 변환 → binary threshold
+        probs = torch.sigmoid(outputs)
+        preds = (probs > 0.5).float()
+
         total_correct += (preds == labels).float().sum().item()
         total += labels.numel()
+
         all_preds.append(preds.cpu())
         all_labels.append(labels.cpu())
-    # 전체 예측 결과 정리
+
     y_true = torch.cat(all_labels).numpy()
     y_pred = torch.cat(all_preds).numpy()
-    print(y_pred)
-    print(y_true)
-    print("recall"  , (y_pred * y_true).sum(axis=0))
-    print("precision", (y_pred * y_true).sum(axis=1))
-    macro_f1 = f1_score(y_true, y_pred, average="macro")
-    micro_f1 = f1_score(y_true, y_pred, average="micro")
-    # class-wise f1 (21개 각 위치)
-    class_wise_f1 = f1_score(y_true, y_pred, average=None)
+
+    from sklearn.metrics import f1_score, recall_score, classification_report
+
+    macro_f1 = f1_score(y_true, y_pred, average='macro', zero_division=0)
+    micro_f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
+    macro_recall = recall_score(y_true, y_pred, average='macro', zero_division=0)
+
     accuracy = total_correct / total
-    print("Class-wise F1:", class_wise_f1.round(3))
-    return total_loss / len(val_loader), accuracy, macro_f1, micro_f1
+    avg_loss = total_loss / len(val_loader)
+
+    print("🔍 Classification Report:")
+    print(classification_report(y_true, y_pred, target_names=label_names, zero_division=0))
+
+    return avg_loss, accuracy, macro_f1, micro_f1, macro_recall
+
+# -------------------- Validation Loop -------------------- #
+# @torch.no_grad()
+# def evaluate(device, model, val_loader, criterion):
+#     model.eval()
+#     total_loss, total_correct, total = 0, 0, 0
+#     all_preds = []
+#     all_labels = []
+#     for images, texts, labels in val_loader:
+#         images, labels = images.to(device), labels.to(device)
+#         outputs = model(images, texts)
+#         loss = criterion(outputs, labels)
+#         total_loss += loss.item()
+#         preds = (outputs > 0.5).float()
+#         total_correct += (preds == labels).float().sum().item()
+#         total += labels.numel()
+#         all_preds.append(preds.cpu())
+#         all_labels.append(labels.cpu())
+#     # 전체 예측 결과 정리
+#     y_true = torch.cat(all_labels).numpy()
+#     y_pred = torch.cat(all_preds).numpy()
+#     # 지표 계산
+#     macro_f1 = f1_score(y_true, y_pred, average='macro', zero_division=0)
+#     micro_f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
+#     macro_recall = recall_score(y_true, y_pred, average='macro', zero_division=0)
+
+#     class_f1 = f1_score(y_true, y_pred, average=None, zero_division=0)
+#     class_recall = recall_score(y_true, y_pred, average=None, zero_division=0)
+
+#     accuracy = total_correct / total
+
+#     print("🔍 Classification Report:")
+#     print(classification_report(y_true, y_pred, target_names=label_names, zero_division=0))
+#     print("📊 Per-class F1:", np.round(class_f1, 3))
+#     print("📊 Per-class Recall:", np.round(class_recall, 3))
+
+#     return total_loss / len(val_loader), accuracy, macro_f1, micro_f1, macro_recall
 
 # -------------------- Training Loop -------------------- #
 def train(args, device, model, train_loader, val_loader, criterion, optimizer):
@@ -115,12 +146,13 @@ def train(args, device, model, train_loader, val_loader, criterion, optimizer):
 
             # validation
             if global_step % args.val_interval == 0:
-                val_loss, accuracy, macro_f1, micro_f1 = evaluate(device, model, val_loader, criterion)
+                val_loss, accuracy, macro_f1, micro_f1, macro_recall = evaluate(device, model, val_loader, criterion)
                 wandb.log({
                     "val/loss": val_loss,
                     "val/accuracy": accuracy,
                     "val/macro_f1": macro_f1,
                     "val/micro_f1": micro_f1,
+                    "val/macro_recall": macro_recall,
                     "step": global_step
                 })
                 
@@ -212,7 +244,9 @@ def main():
     
     # Your training code would go here
     # You can access all parameters via args.parameter_name
-    
+    global label_names
+    df = pd.read_csv(args.csv_path)
+    label_names = list(df.columns[1:])  # Assuming the first column is 'Index' and the rest are labels
     # -------------------- Load Data -------------------- #
     tokenizer = AutoTokenizer.from_pretrained(args.text_model_name)
 
@@ -234,10 +268,15 @@ def main():
 
     # -------------------- Init Model -------------------- #
     model = MultiModalAneurysmClassifier(args.text_model_name, args.image_model_name).to(device)
-    criterion = nn.BCELoss()
+    # criterion = nn.BCELoss()
+    # pos_weight 계산 후 criterion 정의
+    pos_weights = compute_pos_weights(args.csv_path).to(device)
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
+
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
-    
+
     train(args, device, model, train_loader, val_loader, criterion, optimizer)
+
     print("Training complete. Model saved as aneurysm_model.pth")
 
     
