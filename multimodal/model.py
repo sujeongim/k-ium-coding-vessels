@@ -35,7 +35,7 @@ class MultiModalAneurysmClassifier(nn.Module):
     def forward(self, images, texts):
         """
         images: [B, 8, 3, H, W]
-        texts: list of 8 * B text strings
+        texts: List of length B, each is a list of 8 strings
         """
         B = images.size(0)
         all_fused = []
@@ -43,11 +43,12 @@ class MultiModalAneurysmClassifier(nn.Module):
         for i in range(8):
             img = images[:, i, :, :, :]  # [B, 3, H, W]
             img_feat = self.image_encoder(img).squeeze(-1).squeeze(-1)  # [B, image_feature_dim]
-            
-            txt_batch = [t[i] for t in texts]  # List[B]
-            tokens = self.tokenizer(txt_batch, return_tensors="pt", padding=True, truncation=True).to(images.device)
-            txt_feat = self.text_encoder(**tokens).last_hidden_state[:, 0, :]  # CLS token
-            
+
+            # Gather i-th description across all samples
+            ith_texts = [sample[i] for sample in texts]  # List of B strings
+            tokens = self.tokenizer(ith_texts, return_tensors="pt", padding=True, truncation=True).to(images.device)
+            txt_feat = self.text_encoder(**tokens).last_hidden_state[:, 0, :]  # [B, text_feature_dim]
+
             fused = torch.cat([img_feat, txt_feat], dim=1)  # [B, image+text]
             fused = self.fusion_layer(fused)  # [B, hidden_dim]
             all_fused.append(fused)

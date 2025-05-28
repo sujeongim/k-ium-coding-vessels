@@ -1,11 +1,11 @@
 import os
 import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from torchvision import transforms
 from PIL import Image
-# csv_path = "/home/edlab/sjim/k-ium-coding-vessels/train_set/train.csv"
-# image_dir = "/home/edlab/sjim/k-ium-coding-vessels/train_set/images"
+from imagefx import crop, preprocess  # ← 여기 추가
+
 class AneurysmDataset(Dataset):
     def __init__(self, csv_path, image_dir, tokenizer, transform=None):
         self.df = pd.read_csv(csv_path)
@@ -31,22 +31,28 @@ class AneurysmDataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
         patient_id = str(row["Index"])
-        
-        # 1. 이미지 로딩
-        # imagefx에서 crop, preprocess사용하기
+
         images = []
         for suffix in self.image_order:
             image_path = os.path.join(self.image_dir, f"{patient_id}{suffix}.jpg")
             image = Image.open(image_path).convert("RGB")
+
+            # 이미지 전처리: crop → invert/sharpen/contrast → transform
+            image = crop(image)
+            image = preprocess(image)
+            
             if self.transform:
                 image = self.transform(image)
-            images.append(image)
-        images = torch.stack(images)  # [8, 3, H, W]
 
-        # 2. 텍스트 설명 리스트
+            images.append(image)
+
+        # 이미지 텐서 스택: [8, 3, H, W]
+        images = torch.stack(images)
+
+        # 텍스트 리스트: length 8, 각 이미지에 대한 설명
         texts = [self.text_map[suffix] for suffix in self.image_order]
 
-        # 3. 레이블
-        label = torch.tensor(row.values[1:], dtype=torch.float)  # [22]
-        
+        # 라벨: [22] float tensor
+        label = torch.tensor(row.values[1:], dtype=torch.float)
+
         return images, texts, label
