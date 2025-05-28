@@ -72,7 +72,7 @@ def evaluate(device, model, val_loader, criterion):
     y_true = torch.cat(all_labels).numpy()
     y_pred = torch.cat(all_preds).numpy()
 
-    from sklearn.metrics import f1_score, recall_score, classification_report
+
 
     macro_f1 = f1_score(y_true, y_pred, average='macro', zero_division=0)
     micro_f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
@@ -136,6 +136,12 @@ def train(args, device, model, train_loader, val_loader, criterion, optimizer):
             outputs = model(images, texts)
             loss = criterion(outputs, labels)
 
+            # print gradient
+            if global_step % 100 == 0:
+                print(f"Step {global_step}: Loss = {loss.item()}")
+                for name, param in model.named_parameters():
+                    if param.grad is not None:
+                        print(f"  {name}: grad norm = {param.grad.norm().item()}")
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
