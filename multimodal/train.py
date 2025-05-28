@@ -25,6 +25,28 @@ def compute_pos_weights(csv_path):
     pos_weights = (total_samples - label_counts) / (label_counts + 1e-6)  # 방어적 +epsilon
     return torch.tensor(pos_weights.values, dtype=torch.float)
 
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=1, gamma=1, reduction='mean', pos_weight=None):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+        self.pos_weight = pos_weight
+
+    def forward(self, inputs, targets):
+        bce_loss = nn.functional.binary_cross_entropy_with_logits(
+            inputs, targets, weight=self.pos_weight, reduction='none')
+        pt = torch.exp(-bce_loss)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+
+
 def custom_collate_fn(batch):
     """
     batch: list of length B, each item is (images, texts, label)
@@ -261,7 +283,9 @@ def main():
 
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
-    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+    g = torch.Generator().manual_seed(42)
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=g)
+
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, collate_fn=custom_collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, collate_fn=custom_collate_fn)
@@ -270,8 +294,10 @@ def main():
     model = MultiModalAneurysmClassifier(args.text_model_name, args.image_model_name).to(device)
     # criterion = nn.BCELoss()
     # pos_weight 계산 후 criterion 정의
+    # pos_weights = compute_pos_weights(args.csv_path).to(device)
+    # criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
     pos_weights = compute_pos_weights(args.csv_path).to(device)
-    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weights)
+    criterion = FocalLoss(pos_weight=pos_weights)
 
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
 
