@@ -38,7 +38,7 @@ class SpatialAttentionLayer(Layer):
         return input_shape
 
 
-def build_model(input_shape: tuple, num_labels: int=21) -> Model:
+def build_model(input_shape: tuple, num_labels: int=22) -> Model:
     """
     Build model instance for training or loading saved weights.
     Uses ResNet50, Attention mechanism, and LSTM; it takes 8 images in a sequence 
@@ -76,5 +76,5 @@ def build_model(input_shape: tuple, num_labels: int=21) -> Model:
     optimizer = Adam(learning_rate=1e-5)
 
     model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy', 'binary_accuracy'])
-    
+    model.summary()
     return model

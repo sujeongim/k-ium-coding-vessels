@@ -3,6 +3,7 @@ from keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
 from keras import regularizers
 from keras.models import Sequential, Model
+from keras.models import load_model
 from keras.layers import Layer, Conv2D, MaxPooling2D, Flatten, Input, LSTM, Dense, TimeDistributed, Add, Reshape, Multiply, Activation, Lambda
 from utils.SpatialAttention import SpatialAttentionLayer
 import tensorflow as tf
@@ -20,27 +21,32 @@ from model import build_model
 
   
 if __name__=='__main__':
-    CSV_PATH = "./test_set" ####YOUR .CSV DIR HERE####
+    CSV_PATH = "/home/edlab/sjim/k-ium-coding-vessels/test_set" ####YOUR .CSV DIR HERE####
     CSV_FILENAME = "test.csv" ####YOUR .CSV DIR HERE####
-    IMG_PATH = './test' ####YOUR TEST IMAGE FILES DIR HERE####
+    IMG_PATH = f'{CSV_PATH}/images' ####YOUR TEST IMAGE FILES DIR HERE####
     IMG_FILE_EXTENSION = "*.jpg" ####YOUR TEST IMAGE FILE EXTENSION HERE####
 
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s', datefmt='%m/%d/%Y %H:%M:%S',
                         level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    batch_size = 2 # increase/decrease the value according to your RAM storage
+    batch_size = 8 # increase/decrease the value according to your RAM storage
+    model = build_model(input_shape=(224, 224, 3), num_labels=22)
+    dummy_input = np.random.random((1, 8, 224, 224, 3))
+    _ = model(dummy_input)
     
-    ### Building Models ###
-    logger.info("Building a model instance...")
-    model = build_model(input_shape=(720, 720, 3), num_labels=22)
-
-
+    # model.build(input_shape=(None, 8, 224, 224, 3))
+    
     ### Loading Checkpoints ###
     logger.info("Loading the latest checkpoint...")
-    checkpoint_dir = "./kium-output/"
-    latest = tf.train.latest_checkpoint(checkpoint_dir)
-    model.load_weights(latest)
+    model.load_weights("ckpt/ckpt_38.weights.h5")
+
+    # Build the model architecture first
+    
+    # if latest is not None:
+    #     model.load_weights(latest)
+    # else:
+    #     raise FileNotFoundError("No checkpoint found in the directory.")
 
     
     ### Loading test set ###
@@ -52,7 +58,7 @@ if __name__=='__main__':
     imgfiles = sorted(glob.glob(os.path.join(IMG_PATH, IMG_FILE_EXTENSION))) 
     
     images = []
-    smallest_size = (720, 720)
+    smallest_size = (224, 224)
     
     for c in tqdm(range(0, len(imgfiles), 8)):
         temp = []
@@ -99,9 +105,13 @@ if __name__=='__main__':
     # Convert combined_predictions to a DataFrame
     combined_predictions_df = pd.DataFrame(combined_predictions, columns=cols)
     # assuming every column except the one we’re about to add is a 0/1 prediction
-    combined_predictions_df['Aneurysm'] = combined_predictions_df.any(axis=1).astype(int)
+    # combined_predictions_df['Aneurysm'] = combined_predictions_df.any(axis=1).astype(int)
     
     combined_predictions_df['Index'] = test['Index'].copy()
     
     logger.info("Saving output.csv...")
-    combined_predictions_df.to_csv('./test_set/output.csv', index=False)
+    
+    if not os.path.exists('./results'):
+        os.makedirs('./results')
+    
+    combined_predictions_df.to_csv('./results/output2.csv', index=False)
