@@ -41,7 +41,7 @@ class AneurysmDataset(Dataset):
         images = []
         for suffix in self.image_order:
             #print(suffix)
-            image_path = os.path.join(self.image_dir, f"0{patient_id}{suffix}.jpg")
+            image_path = os.path.join(self.image_dir, f"{patient_id}{suffix}.jpg")
             image = Image.open(image_path).convert("RGB")
 
             # 이미지 전처리: crop → invert/sharpen/contrast → transform

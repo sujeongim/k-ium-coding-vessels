@@ -11,13 +11,14 @@ from torchvision import transforms
 from tqdm import tqdm
 from sklearn.metrics import f1_score, recall_score, classification_report
 import numpy as np
-from model import MultiModalAneurysmClassifier  # 위에서 만든 모델 클래스
 from dataset import AneurysmDataset             # 위에서 만든 Dataset 클래스
 import argparse
 import pandas as pd
 
 from utils import CombinedLoss
 from dataset import COLUMNS_TO_DROP
+from model import MultiModalAneurysmClassifier, ImageOnlyAneurysmClassifier
+
 
 def compute_pos_weights(csv_path):
     df = pd.read_csv(csv_path)
@@ -206,8 +207,13 @@ def parse_args():
     # Wandb configuration
     parser.add_argument("--wandb_project", type=str, default="aneurysm-multimodal",
                        help="Wandb project name")
+    parser.add_argument("--run_name", type=str, default=None,
+                       help="Name of the wandb run")
     parser.add_argument("--disable_wandb", action="store_true",
                        help="Disable wandb logging")
+    parser.add_argument("--modality", type=str, choices=["multimodal", "image_only"], default="multimodal",
+                    help="Choose input modality: multimodal (image+text) or image_only")
+
     
     return parser.parse_args()
 
@@ -230,16 +236,20 @@ def main():
     
     # Initialize wandb
     if not args.disable_wandb:
-        wandb.init(project=args.wandb_project, config={
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "lr": args.lr,
-            "image_model": args.image_model_name,
-            "text_model": args.text_model_name,
-            "csv_path": args.csv_path,
-            "image_dir": args.image_dir,
-            "device": str(device)
-        })
+        wandb.init(
+            project=args.wandb_project, 
+            name=args.run_name,  # 원하는 run name을 여기에 입력
+            config={
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "lr": args.lr,
+                "image_model": args.image_model_name,
+                "text_model": args.text_model_name,
+                "csv_path": args.csv_path,
+                "image_dir": args.image_dir,
+                "device": str(device)
+            }
+        )
     
     print(f"Configuration:")
     print(f"  CSV Path: {args.csv_path}")
@@ -279,7 +289,11 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, collate_fn=custom_collate_fn)
 
     # -------------------- Init Model -------------------- #
-    model = MultiModalAneurysmClassifier(args.text_model_name, args.image_model_name).to(device)
+    if args.modality == "multimodal":
+        model = MultiModalAneurysmClassifier(args.text_model_name, args.image_model_name).to(device)
+    else:
+        model = ImageOnlyAneurysmClassifier(args.image_model_name).to(device)
+
     
     pos_weights = compute_pos_weights(args.csv_path).to(device)
     print(f"Positive weights: {pos_weights}")

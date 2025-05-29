@@ -6,4 +6,4 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="$(dirname $(pwd))":"$(pwd)"
 
 # 학습 실행
-python train.py --loss='combined'
+python train.py --loss='focal' --modality "multimodal" --run_name "multimodal-focal"

@@ -64,3 +64,42 @@ class MultiModalAneurysmClassifier(nn.Module):
         out = self.classifier(combined)  # [B, 22]
         return out
 
+class ImageOnlyAneurysmClassifier(nn.Module):
+    def __init__(self, image_model_name="resnet18", hidden_dim=512):
+        super().__init__()
+        
+        # Image encoder
+        image_model = models.__dict__[image_model_name](pretrained=True)
+        self.image_encoder = nn.Sequential(*list(image_model.children())[:-1])  # remove FC layer
+        self.image_feature_dim = image_model.fc.in_features
+        
+        # MLP after image features
+        self.image_fusion_layer = nn.Sequential(
+            nn.Linear(self.image_feature_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+        )
+
+        # Final classifier (15 outputs)
+        self.classifier = nn.Sequential(
+            nn.Linear(hidden_dim * 8, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 15)
+        )
+
+    def forward(self, images, texts=None):
+        """
+        images: [B, 8, 3, H, W]
+        """
+        B = images.size(0)
+        all_fused = []
+
+        for i in range(8):
+            img = images[:, i, :, :, :]  # [B, 3, H, W]
+            img_feat = self.image_encoder(img).squeeze(-1).squeeze(-1)  # [B, image_feature_dim]
+            fused = self.image_fusion_layer(img_feat)  # [B, hidden_dim]
+            all_fused.append(fused)
+
+        combined = torch.cat(all_fused, dim=1)  # [B, hidden_dim * 8]
+        out = self.classifier(combined)  # [B, 15]
+        return out
