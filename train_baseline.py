@@ -12,21 +12,24 @@ from PIL import Image
 import math
 from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
 import tensorflow as tf
+import argparse
+
 
 if __name__ == '__main__':
     tf.config.list_physical_devices('GPU')
     gpus = tf.config.list_physical_devices("GPU")
     print(f"Detected {len(gpus)} GPU(s):", gpus)
     
-    # for g in gpus:
-    #     tf.config.experimental.set_memory_growth(g, True)
+    parser = argparse.ArgumentParser(description='Train a baseline model for the dataset.')
+    parser.add_argument('--train_dir', type=str, default='', help='Path to the training CSV file directory.')
+    parser.add_argument('--batch_size', type=int, default=16, help='Batch size for training.')
+    parser.add_argument('--output_dir', type=str, default='./ckpt', help='Directory to save the model checkpoints.')
+    parser.add_argument('--positive_only', action='store_true', help='Use only positive samples for training.')
+    config = parser.parse_args()
     
-    # strategy = tf.distribute.MirroredStrategy()
-    # print("Num replicas:", strategy.num_replicas_in_sync)
-    
-    TRAIN_PATH = "/home/edlab/sjim/k-ium-coding-vessels/train_set" ####YOUR .CSV DIR HERE####
+    # TRAIN_PATH = "" ####YOUR .CSV DIR HERE####
     CSV_FILENAME = "train.csv" ####YOUR .CSV DIR HERE####
-    IMG_PATH = f'{TRAIN_PATH}/images' ####YOUR TEST IMAGE FILES DIR HERE####
+    IMG_PATH = f'{config.train_dir}/images' ####YOUR TEST IMAGE FILES DIR HERE####
     IMG_FILE_EXTENSION = "*.jpg" ####YOUR TEST IMAGE FILE EXTENSION HERE####
     OUTPUT_PATH = './ckpt' ####YOUR OUTPUT DIR HERE####
     batch_size = 16
@@ -37,7 +40,15 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     
     logger.info("Loading train.csv...")
-    train_csv = pd.read_csv(f'{TRAIN_PATH}/{CSV_FILENAME}')
+    if config.positive_only:
+        train_csv = pd.read_csv(f'{config.train_dir}/{CSV_FILENAME}')
+        train_csv = train_csv[train_csv['Aneurysm'].astype(int)==1]
+        indices = train_csv['Index'].to_numpy(dtype='int32')
+        print(f"Indices of positive samples: {indices[0]}")
+        logger.info(f"Filtered to {len(train_csv)} positive samples.")
+    else:
+        logger.info("Using all samples from train.csv.")
+        train_csv = pd.read_csv(f'{config.train_dir}/{CSV_FILENAME}')
     
     labels_by_patient = {}
     for _, row in train_csv.iterrows():
@@ -49,6 +60,10 @@ if __name__ == '__main__':
     
     logger.info("Loading train images...")
     imgfiles = sorted(glob(f'{IMG_PATH}/{IMG_FILE_EXTENSION}'))
+    if config.positive_only:
+        imgfiles = [f for f in imgfiles if int(f.split('/')[-1][:4]) in indices]
+        logger.info(f"Filtered to {len(imgfiles)} images with positive samples only.")
+            
     logger.info(f"Found {len(imgfiles)} images.")
     images = []
     smallest_size = (224, 224)
