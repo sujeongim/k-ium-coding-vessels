@@ -6,4 +6,4 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="$(dirname $(pwd))":"$(pwd)"
 
 # 학습 실행
-python train.py
+python train.py --loss='combined'
