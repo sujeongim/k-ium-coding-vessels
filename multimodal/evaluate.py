@@ -16,7 +16,7 @@ from dataset import AneurysmDataset             # 위에서 만든 Dataset 클�
 import argparse
 import pandas as pd
 
-from utils import CombinedLoss
+from utils import CombinedLoss, FocalLoss  
 from dataset import COLUMNS_TO_DROP
 
 def compute_pos_weights(csv_path):
@@ -27,27 +27,6 @@ def compute_pos_weights(csv_path):
     
     pos_weights = (total_samples - label_counts) / (label_counts + 1e-6)  # 방어적 +epsilon
     return torch.tensor(pos_weights.values, dtype=torch.float)
-
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=1, gamma=1, reduction='mean', pos_weight=None):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-        self.pos_weight = pos_weight
-
-    def forward(self, inputs, targets):
-        bce_loss = nn.functional.binary_cross_entropy_with_logits(
-            inputs, targets, weight=self.pos_weight, reduction='none')
-        pt = torch.exp(-bce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * bce_loss
-        if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
-
 
 
 def custom_collate_fn(batch):
@@ -99,7 +78,6 @@ def evaluate(device, model, val_loader, criterion):
     y_pred = torch.cat(all_preds).numpy()
 
 
-
     macro_f1 = f1_score(y_true, y_pred, average='macro', zero_division=0)
     micro_f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
     macro_recall = recall_score(y_true, y_pred, average='macro', zero_division=0)
@@ -114,56 +92,31 @@ def evaluate(device, model, val_loader, criterion):
 
 
 # -------------------- Training Loop -------------------- #
-def train(args, device, model, train_loader, val_loader, criterion, optimizer):
-    model.train()
-    global_step = 0
-    best_val_loss = float('inf')
-    for epoch in range(args.epochs):
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
-        for images, texts, labels in pbar:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images, texts)
-            loss = criterion(outputs, labels)
+def test(args, device, model, test_loader, criterion):
+    model.eval()
+    total_loss, total_acc, total_macro_f1, total_micro_f1, total_macro_recall = 0, 0, 0, 0, 0
+    
+    for images, texts, labels in tqdm(test_loader, desc="Testing", unit="batch"):
+        images, labels = images.to(device), labels.to(device)
+        outputs = model(images, texts)
+        loss = criterion(outputs, labels)
 
-            # print gradient
-            if global_step % 100 == 0:
-                print(f"Step {global_step}: Loss = {loss.item()}")
-                for name, param in model.named_parameters():
-                    if param.grad is not None:
-                        print(f"  {name}: grad norm = {param.grad.norm().item()}")
-            optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
-
-            # logging
-            wandb.log({"train/loss": loss.item(), "step": global_step})
-            pbar.set_postfix(loss=loss.item())
-
-            # validation
-            if global_step % args.val_interval == 0:
-                val_loss, accuracy, macro_f1, micro_f1, macro_recall = evaluate(device, model, val_loader, criterion)
-                wandb.log({
-                    "val/loss": val_loss,
-                    "val/accuracy": accuracy,
-                    "val/macro_f1": macro_f1,
-                    "val/micro_f1": micro_f1,
-                    "val/macro_recall": macro_recall,
-                    "step": global_step
-                })
-                
-                # Save the model if it has the best validation loss so far
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    torch.save(model.state_dict(), "best_aneurysm_model.pth")
-                    print(f"New best model saved with val_loss: {val_loss:.4f}")
-            global_step += 1
-
-    # Save model
-    wandb.log({"best_val_loss": best_val_loss})
-    torch.save(model.state_dict(), "aneurysm_model.pth")
-    wandb.save("aneurysm_model.pth")
-
+        val_loss, accuracy, macro_f1, micro_f1, macro_recall = evaluate(device, model, test_loader, criterion)
+        total_loss += val_loss
+        total_acc += accuracy
+        total_macro_f1 += macro_f1
+        total_micro_f1 += micro_f1
+        total_macro_recall += macro_recall
+    num_batches = len(test_loader)
+    avg_loss = total_loss / num_batches
+    avg_acc = total_acc / num_batches
+    avg_macro_f1 = total_macro_f1 / num_batches
+    avg_micro_f1 = total_micro_f1 / num_batches
+    avg_macro_recall = total_macro_recall / num_batches
+    print(f"Test Loss: {avg_loss:.4f}, Test Accuracy: {avg_acc:.4f}, "
+          f"Test Macro F1: {avg_macro_f1:.4f}, Test Micro F1: {avg_micro_f1:.4f}, "
+          f"Test Macro Recall: {avg_macro_recall:.4f}")
+        
 
 
 def parse_args():
@@ -171,10 +124,10 @@ def parse_args():
     
     # Data paths
     parser.add_argument("--csv_path", type=str, 
-                       default="/home/edlab/sjim/k-ium-coding-vessels/train_set/train.csv",
+                       default="/home/edlab/sjim/k-ium-coding-vessels/test_set/test.csv",
                        help="Path to the CSV file")
     parser.add_argument("--image_dir", type=str,
-                       default="/home/edlab/sjim/k-ium-coding-vessels/train_set/images",
+                       default="/home/edlab/sjim/k-ium-coding-vessels/test_set/images",
                        help="Path to the images directory")
     
     # Model configuration
@@ -190,8 +143,6 @@ def parse_args():
                        help="Batch size for training")
     parser.add_argument("--lr", type=float, default=1e-4,
                        help="Learning rate")
-    parser.add_argument("--val_interval", type=int, default=1,
-                       help="Validate every n steps")
     parser.add_argument("--seed", type=int, default=42,
                        help="Random seed for reproducibility")
     parser.add_argument("--loss", type=str, default="focal",
@@ -228,18 +179,6 @@ def main():
     else:
         device = torch.device(args.device)
     
-    # Initialize wandb
-    if not args.disable_wandb:
-        wandb.init(project=args.wandb_project, config={
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "lr": args.lr,
-            "image_model": args.image_model_name,
-            "text_model": args.text_model_name,
-            "csv_path": args.csv_path,
-            "image_dir": args.image_dir,
-            "device": str(device)
-        })
     
     print(f"Configuration:")
     print(f"  CSV Path: {args.csv_path}")
@@ -249,7 +188,7 @@ def main():
     print(f"  Epochs: {args.epochs}")
     print(f"  Batch Size: {args.batch_size}")
     print(f"  Learning Rate: {args.lr}")
-    print(f"  Validation Interval: {args.val_interval}")
+    #print(f"  Validation Interval: {args.val_interval}")
     print(f"  Device: {device}")
     
     # Your training code would go here
@@ -269,17 +208,16 @@ def main():
 
     full_dataset = AneurysmDataset(args.csv_path, args.image_dir, tokenizer, transform)
 
-    train_size = int(0.8 * len(full_dataset))
-    val_size = len(full_dataset) - train_size
-    g = torch.Generator().manual_seed(42)
-    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size], generator=g)
 
-
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, collate_fn=custom_collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, collate_fn=custom_collate_fn)
+    test_dataset = full_dataset
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4, collate_fn=custom_collate_fn)
 
     # -------------------- Init Model -------------------- #
     model = MultiModalAneurysmClassifier(args.text_model_name, args.image_model_name).to(device)
+    # load pre-trained weights if available
+    if os.path.exists("best_aneurysm_model.pth"):
+        model.load_state_dict(torch.load("best_aneurysm_model.pth", map_location=device))
+        print("Loaded pre-trained model weights.")
     
     pos_weights = compute_pos_weights(args.csv_path).to(device)
     print(f"Positive weights: {pos_weights}")
@@ -289,12 +227,9 @@ def main():
         criterion = FocalLoss(alpha=0.25, gamma=2, reduction='mean', pos_weight=pos_weights)
     elif args.loss == "combined":
         criterion = CombinedLoss(pos_weight=pos_weights)
-        
-    optimizer = optim.AdamW(model.parameters(), lr=args.lr)
 
-    train(args, device, model, train_loader, val_loader, criterion, optimizer)
+    test(args, device, model, test_loader, criterion)
 
-    print("Training complete. Model saved as aneurysm_model.pth")
 
     
 if __name__ == "__main__":

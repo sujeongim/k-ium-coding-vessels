@@ -35,7 +35,7 @@ class MultiModalAneurysmClassifier(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim * 8, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, 22)
+            nn.Linear(hidden_dim, 15)
         )
 
 

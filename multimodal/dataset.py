@@ -9,6 +9,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from imagefx import crop, preprocess  # ← 여기 추가
 
+
+COLUMNS_TO_DROP = ['R_VA', 'L_PICA', 'R_PICA', 'L_SCA', 'R_SCA', 'L_PCA', 'R_PCA'] # less than 1% of the data
+
 class AneurysmDataset(Dataset):
     def __init__(self, csv_path, image_dir, tokenizer, transform=None):
         self.df = pd.read_csv(csv_path)
@@ -37,7 +40,8 @@ class AneurysmDataset(Dataset):
 
         images = []
         for suffix in self.image_order:
-            image_path = os.path.join(self.image_dir, f"{patient_id}{suffix}.jpg")
+            #print(suffix)
+            image_path = os.path.join(self.image_dir, f"0{patient_id}{suffix}.jpg")
             image = Image.open(image_path).convert("RGB")
 
             # 이미지 전처리: crop → invert/sharpen/contrast → transform
@@ -58,6 +62,9 @@ class AneurysmDataset(Dataset):
         texts = [self.text_map[suffix] for suffix in self.image_order]
 
         # 라벨: [22] float tensor
+        # drop columns
+        row = row.drop(COLUMNS_TO_DROP)
+   
         label = torch.tensor(row.values[1:], dtype=torch.float)
 
         return images, texts, label
