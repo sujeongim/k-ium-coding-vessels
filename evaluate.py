@@ -9,16 +9,28 @@
 #
 import pandas
 from sklearn.metrics import roc_auc_score, f1_score, recall_score
+import argparse
 
-
-def my_read_csv(filename):
-    data = pandas.read_csv(filename)
+def my_read_csv(config:argparse.Namespace, is_output=False):
+    data = pandas.read_csv(config.output_file if is_output else config.gt_file)
+    if config.positive_only and not is_output:
+        data = data[data['Aneurysm'].astype(int) == 1]
     aneurysm = data.Aneurysm
     tot = data.drop(columns=['Index'])
     location = data.drop(columns=['Index', 'Aneurysm'])
     tot['Aneurysm'] = (tot['Aneurysm'] > 0.5).astype(int)
     return aneurysm, location, tot
 
+def filter_read_csv(filename):
+    data = pandas.read_csv(filename).drop(columns=['Index'])
+    aneurysm = data.Aneurysm
+    # Filter columns where less than 1% of values are 1
+    total_rows = len(data)
+    cols_to_keep = [col for col in data.columns if (data[col] == 1).sum() / total_rows >= 0.01 or col in ['Aneurysm']]
+    print(f"Columns kept:\n\n {cols_to_keep}")
+    
+    data = data[cols_to_keep]
+    return data, cols_to_keep
 
 def calc_accuracy(gt_location, output_location):
     confusion_tab = gt_location.subtract(output_location, axis='index', fill_value=0)
@@ -30,9 +42,9 @@ def calc_accuracy(gt_location, output_location):
     return a
 
 
-def eval_model():
-    gt_aneurysm, gt_location, gt_total = my_read_csv('/home/edlab/sjim/k-ium-coding-vessels/test_set/groundtruth.csv')
-    output_aneurysm, output_location, output_total = my_read_csv('./results/output2.csv')
+def eval_model(config):
+    gt_aneurysm, gt_location, gt_total = my_read_csv(config)
+    output_aneurysm, output_location, output_total = my_read_csv(config, is_output=True)
     auc_val = roc_auc_score(gt_aneurysm, output_aneurysm)
     acc_val = calc_accuracy(gt_location, output_location)
     
@@ -41,23 +53,46 @@ def eval_model():
     macro_recall = recall_score(gt_total, output_total, average='macro', zero_division=0)
 
     
-    return auc_val, acc_val, macro_f1, micro_f1, macro_recall
+    _, cols_to_keep = filter_read_csv('/home/edlab/sjim/k-ium-coding-vessels/train_set/train.csv')
+    f_gt_total = gt_total[cols_to_keep]
+    f_output_total = output_total[cols_to_keep]
+    f_macro_f1 = f1_score(f_gt_total, f_output_total, average='macro', zero_division=0)
+    f_micro_f1 = f1_score(f_gt_total, f_output_total, average='micro', zero_division=0)
+    f_macro_recall = recall_score(f_gt_total, f_output_total, average='macro', zero_division=0)
+    
+    
+    return auc_val, acc_val, macro_f1, micro_f1, macro_recall, f_macro_f1, f_micro_f1, f_macro_recall
     # You may use evalute() if you need to evaluate your model
 
 
-def main():
-    auc, acc, macro_f1, micro_f1, recall = eval_model()
+def main(config: argparse.Namespace):
+    auc, acc, macro_f1, micro_f1, recall, f_macro_f1, f_micro_f1, f_macro_recall = eval_model(config)
     print('AUROC of the provided model')
-    print (auc)
+    print (f"{auc:.3f}")
     print('Accuracy for locations')
-    print (acc)
+    print (f"{acc:.3f}")
     print('Macro F1 Score')
-    print(macro_f1)
+    print(f"{macro_f1:.3f}")
     print('Micro F1 Score')
-    print(micro_f1)
+    print(f"{micro_f1:.3f}")
     print('Recall Score')
-    print(recall)
+    print(f"{recall:.3f}")
+    
+    print("=== >1% percent of values are 1 ===")
+    
+    print('Macro F1 Score (filtered)')
+    print(f"{f_macro_f1:.3f}")
+    print('Micro F1 Score (filtered)')
+    print(f"{f_micro_f1:.3f}")
+    print('Macro Recall Score (filtered)')
+    print(f"{f_macro_recall:.3f}")
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description='Evaluate the model output.')
+    parser.add_argument('--output_file', type=str, default='./results/output.csv', help='Path to the output file to evaluate.')
+    parser.add_argument('--gt_file', type=str, default=None, help='Path to the ground truth file.')
+    parser.add_argument('--positive_only', action='store_true', help='Use only positive samples for evaluation.')
+    config = parser.parse_args()
+    
+    main(config)
