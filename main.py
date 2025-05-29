@@ -18,19 +18,30 @@ from collections import defaultdict
 from tqdm import tqdm
 from PIL import Image
 from model import build_model
+import argparse
 
   
 if __name__=='__main__':
-    CSV_PATH = "/home/edlab/sjim/k-ium-coding-vessels/test_set" ####YOUR .CSV DIR HERE####
+    
+    parser = argparse.ArgumentParser(description='Evaluate a baseline model for the dataset.')
+    parser.add_argument('--test_path', type=str, default=None, help='Path to the CSV file directory.')
+    parser.add_argument('--ckpt_path', type=str, default='./ckpt', help='Path to the model checkpoint directory.')
+    parser.add_argument('--batch_size', type=int, default=16, help='Batch size for evaluation.')
+    parser.add_argument('--positive_only', action='store_true', help='Use only positive samples for evaluation.')
+    parser.add_argument('--output_file', type=str, default='./results/output.csv', help='Path to save the output CSV file.')
+    parser.add_argument('--threshold', type=float, default=0.5, help='Threshold for converting probabilities to binary predictions.')
+    config = parser.parse_args()
+    
+    
+    # CSV_PATH = "" ####YOUR .CSV DIR HERE####
     CSV_FILENAME = "test.csv" ####YOUR .CSV DIR HERE####
-    IMG_PATH = f'{CSV_PATH}/images' ####YOUR TEST IMAGE FILES DIR HERE####
+    IMG_PATH = f'{config.test_path}/images' ####YOUR TEST IMAGE FILES DIR HERE####
     IMG_FILE_EXTENSION = "*.jpg" ####YOUR TEST IMAGE FILE EXTENSION HERE####
 
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s', datefmt='%m/%d/%Y %H:%M:%S',
                         level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    batch_size = 8 # increase/decrease the value according to your RAM storage
     model = build_model(input_shape=(224, 224, 3), num_labels=22)
     dummy_input = np.random.random((1, 8, 224, 224, 3))
     _ = model(dummy_input)
@@ -39,23 +50,26 @@ if __name__=='__main__':
     
     ### Loading Checkpoints ###
     logger.info("Loading the latest checkpoint...")
-    model.load_weights("ckpt/ckpt_38.weights.h5")
+    model.load_weights(config.ckpt_path)
 
-    # Build the model architecture first
-    
-    # if latest is not None:
-    #     model.load_weights(latest)
-    # else:
-    #     raise FileNotFoundError("No checkpoint found in the directory.")
 
     
     ### Loading test set ###
     logger.info("Loading test.csv...")
     
-    test = pd.read_csv(os.path.join(CSV_PATH, CSV_FILENAME))
+    test = pd.read_csv(os.path.join(config.test_path, CSV_FILENAME))
+    if config.positive_only:
+        test = test[test['Aneurysm'].astype(int) == 1]
+        indices = test['Index'].to_numpy(dtype='int32')
+        logger.info(f"Filtered to {len(test)} positive samples.")
     
     logger.info("Loading test images...")
     imgfiles = sorted(glob.glob(os.path.join(IMG_PATH, IMG_FILE_EXTENSION))) 
+    if config.positive_only:
+        imgfiles = [f for f in imgfiles if int(f.split('/')[-1][1:4]) in indices]
+        # assert all(int(f.split('/')[-1][1:4]) == idx for f, idx in zip(imgfiles, indices)), f"Image files and indices do not match elementwise: {imgfiles[:10]} vs {indices[:10]}"
+        logger.info(f"Filtered to {len(imgfiles)} images corresponding to positive samples.")
+    # print(imgfiles)
     
     images = []
     smallest_size = (224, 224)
@@ -82,14 +96,13 @@ if __name__=='__main__':
     
     ### Model prediction and Save output.csv ###
     logger.info("Yielding model prediction...")
-    pred = model.predict(test_img, batch_size=batch_size)
+    pred = model.predict(test_img, batch_size=config.batch_size)
     
     cols = test.drop(['Index'], axis=1).columns
     # Set a threshold for converting probabilities to binary predictions
-    threshold = 0.5
 
     # Apply the threshold to the predictions for binary labels
-    binary_predictions = np.where(pred > threshold, 1, 0)
+    binary_predictions = np.where(pred > config.threshold, 1, 0)
 
     # Get the probabilities for the 'Aneurysm' column
     aneurysm_probabilities = pred[:, 0]  # Assuming 'Aneurysm' is the first column
@@ -114,4 +127,4 @@ if __name__=='__main__':
     if not os.path.exists('./results'):
         os.makedirs('./results')
     
-    combined_predictions_df.to_csv('./results/output2.csv', index=False)
+    combined_predictions_df.to_csv(config.output_file, index=False)

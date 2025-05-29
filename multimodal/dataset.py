@@ -13,12 +13,14 @@ from imagefx import crop, preprocess  # ← 여기 추가
 COLUMNS_TO_DROP = ['R_VA', 'L_PICA', 'R_PICA', 'L_SCA', 'R_SCA', 'L_PCA', 'R_PCA'] # less than 1% of the data
 
 class AneurysmDataset(Dataset):
-    def __init__(self, csv_path, image_dir, tokenizer, transform=None):
+    def __init__(self, csv_path, image_dir, tokenizer, transform=None, train_type='train'):
+        
         self.df = pd.read_csv(csv_path)
         self.image_dir = image_dir
         self.transform = transform
         self.tokenizer = tokenizer
         
+        self.train_type = train_type  # 'train' or 'test'
         self.image_order = ['LI-A', 'LI-B', 'RI-A', 'RI-B', 'LV-A', 'LV-B', 'RV-A', 'RV-B']
         self.text_map = {
             'LI-A': "Left internal carotid artery injection, view A",

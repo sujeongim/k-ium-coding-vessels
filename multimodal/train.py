@@ -277,7 +277,7 @@ def main():
                             std=[0.229, 0.224, 0.225]),
     ])
 
-    full_dataset = AneurysmDataset(args.csv_path, args.image_dir, tokenizer, transform)
+    full_dataset = AneurysmDataset(args.csv_path, args.image_dir, tokenizer, transform, train_type='train')
 
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
